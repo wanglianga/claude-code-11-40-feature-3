@@ -6,6 +6,11 @@
 
 > 服务只交付覆盖与调查有效性数据。它**不派发巡护任务、不预约人员器材、不创建执法/捕捉/资源调度动作**，
 > 也不把调查缺口转成行动指令。
+>
+> 另含**湿地修复调查数据比较工作区**：为修复区选择候选参照区，说明哪些观测差异有可比依据、
+> 哪些尚不足以支持工程影响判断（权重只用修复前合格调查拟合；施工影响按工程实际范围与日期剔除，
+> 不按行政归属认定未受影响；没有足够修复前共同窗口时只报告描述性差异）。
+> 该工作区**不执行工程审批，不对项目自动评优**。
 
 ---
 
@@ -16,7 +21,7 @@
 | 前端 | Vue 3.5 + TypeScript + Vue Router + Vite 7 |
 | 后端 | FastAPI 0.163 + SQLAlchemy 2.1 + Shapely 2.2 |
 | 数据库 | PostgreSQL 18（JSONB 存原始载荷 / 门槛快照 / 证书结论） |
-| 测试 | pytest（15 个用例，覆盖 7 个验收场景 + 修订/回溯） |
+| 测试 | pytest（26 个用例，覆盖 7 个验收场景 + 修订/回溯 + 湿地修复比较 11 个用例） |
 
 ## 2. 一键启动（Docker Compose）
 
@@ -32,7 +37,7 @@ docker compose up --build
 - 健康检查：<http://localhost:8000/api/health>
 
 首次启动时后端容器会等待 PostgreSQL 就绪，自动建表并写入演示种子数据
-（1 个运行、9 个站点、27 个调查单元、536 条档案记录）。
+（2 个调查运行、16 个站点、48 个调查单元，覆盖主服务 7 个验收场景与湿地修复比较工作区）。
 
 停止：`docker compose down`；连同数据卷清理：`docker compose down -v`。
 
@@ -155,13 +160,14 @@ DATABASE_URL='postgresql+psycopg://ccdev:ccdev@127.0.0.1:5432/survey_integrity_t
 cd backend
 DATABASE_URL='postgresql+psycopg://ccdev:ccdev@127.0.0.1:5432/survey_integrity_test' \
   .venv/bin/python -m pytest -q
-# 15 passed
+# 26 passed
 ```
 覆盖：
 
 - `tests/test_scenarios.py`：7 个验收场景 + 校时放行 + 引用用途限制 + 回溯链完整性 + 无派工动作断言
 - `tests/test_revisions.py`：判读修订触发复审与新证书版本、档案记录修订保留哈希链、
   单元证据全链可回溯、重算运行不改变旧证书
+- `tests/test_comparison.py`：湿地修复调查比较工作区 11 个用例（见 6.5）
 
 ### 6.2 前端构建与类型检查
 
@@ -185,7 +191,14 @@ npm run build            # 构建成功
 7. `规则证书 vs 概率估计`：17 个可比较单元，10 一致支持、7 「概率支持 · 规则排除」；
    阈值敏感性表显示阈值上浮至 0.90 时可用样本降为 0。
 8. `单元回溯链`：原始事件 → 覆盖条件 → 版本 → 证书 → 趋势引用五段齐全，记录含 64 位哈希。
-9. 浏览器控制台无报错。
+9. `湿地修复调查比较`：生成新报告 → 处理区 6 个合格单元、5 个参照进入组合、3/3 个修复后比较日可报告；
+   权重页显示每个候选的权重或排除理由；区域页显示林边参照区 3 个 2025 春季缺失调查日；
+   敏感性页显示修复前拟合误差、留出日期与 5 项去一参照检验。
+10. 登记 3 个参照区同期施工并重算 → 2026-04-11 / 04-12 两日切为「暂停」，
+    报告状态「待复核」，暂停理由列出保留权重 17% < 60%，并可切回旧报告看到原值 +3.042 / +1.614。
+11. 在工程资料页把实际开工日期更正为 2026-03-01 并重算 → 变化来源显示 `engineering_input_revision`，
+    权重变化逐项列出，方案签名未变。
+12. 浏览器控制台无报错。
 
 ### 6.4 API 冒烟
 
@@ -197,7 +210,56 @@ TOKEN=$(curl -s -X POST http://127.0.0.1:8000/api/auth/login \
 curl -s http://127.0.0.1:8000/api/runs -H "Authorization: Bearer $TOKEN"
 curl -s http://127.0.0.1:8000/api/runs/1/overview -H "Authorization: Bearer $TOKEN"
 curl -s http://127.0.0.1:8000/api/units/1/trace -H "Authorization: Bearer $TOKEN"
+
+# 湿地修复比较工作区
+PLAN=$(curl -s http://127.0.0.1:8000/api/comparison/plans -H "Authorization: Bearer $TOKEN" \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)[0]["id"])')
+curl -s -X POST http://127.0.0.1:8000/api/comparison/plans/$PLAN/analyse \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"method":"weighted_multi_reference","note":"README 冒烟"}'
 ```
+
+### 6.5 湿地修复比较工作区验收（`tests/test_comparison.py`，已实际执行）
+
+```bash
+cd backend
+DATABASE_URL='postgresql+psycopg://ccdev:ccdev@127.0.0.1:5432/survey_integrity_test' \
+  .venv/bin/python -m pytest -q tests/test_comparison.py
+# 11 passed
+```
+
+覆盖内容：
+
+- **真实结果**：1 个修复区 + 6 个候选参照，输出 3 个修复前共同日期与 3 个修复后比较日的
+  处理区/参照组合观测率与差异；每个候选显示贡献权重或排除理由。
+- **权重只用修复前**：把观察窗口截断到修复前，重算的权重与完整窗口一致（差异 <2%），
+  证明看到修复后结果不会改变权重。
+- **参照受施工影响**：3 个高权重参照在观察季开工后，受影响日期权重保留 <60%，
+  相关结论转为待复核，暂停项逐条列出上一份报告与受影响调查单元。
+- **部分季节缺失**：林边参照区 2025 春季无调查单元，缺失日期明确列出且**不计为 0 次观测**，
+  该候选以“修复前证据不足”排除。
+- **描述性降级**：把修复前共同窗口门槛抬高后，不拟合权重、不产出差异，只报告描述性差异并说明原因。
+- **工程日期回溯更正**：更正实际开工日期后重算，变化来源标注为 `engineering_input_revision`
+  （与方案变化分开），可比单元与权重变化逐项列出。
+- **有效努力量校准**：补录调查可用性说明后，有效努力量下降而原始检出数不变。
+- **无审批/评优**：OpenAPI 路径与比较接口响应中不出现 approve/score/ranking 等字样。
+- **补录停机日志与扩大影响边界**：通过主服务补录停机日志并重建运行后重算，变化归因为调查输入修订；
+  再登记覆盖参照站的扩大施工阶段，WR-R4 的受影响单元被逐日剔除并可追到具体单元。
+- **报告冻结**：重算新增报告并链到上一份，旧报告的存储结果不被读取或重算改写。
+
+### 6.6 湿地修复比较的业务口径
+
+| 主题 | 处理方式 |
+| --- | --- |
+| 观测率 | 每个调查单元先算有效努力量（可用相机小时/24 × 判读完成比例，可再按可用性说明折算），再用「检出次数 ÷ 有效相机日」比较；照片总数只作核对，不代入观测率 |
+| 证书适用性 | 只读取主服务的当前证书与门槛；复审中、无证书或不合格的单元从比较剔除，区域自身观测事实仍可查看 |
+| 参照权重 | 只用修复前共同合格日期拟合：生境相似度 × 修复前覆盖率 × 1/(1+修复前拟合误差)，归一化后进入组合；修复后结果不参与权重 |
+| 施工影响 | 按工程资料（阶段）的实际边界与实际日期判定；落在影响范围内的单元逐日剔除，不因行政归属不同认定未受影响 |
+| 参照区季中开工 | 仅保留开工前符合窗口的部分；修复后权重保留不足 60% 的日期暂停报告，剩余证据不足时整份报告转为「待复核」 |
+| 缺失调查 | 期望调查日无合格单元时列为缺失，**不计为 0 次观测** |
+| 无共同修复前窗口 | 降级为描述性差异，不强行拟合 |
+| 变化归因 | 报告记录输入批次（调查指纹 + 工程输入指纹 + 方案签名）；重算时分开说明「输入修订」与「方案变化」，差异逐项可追到单元 |
+| 报告冻结 | 每次重算新增报告并链到上一份，旧报告保留当时证据与结论，不被改写 |
 
 ## 7. 界面
 
@@ -211,6 +273,7 @@ curl -s http://127.0.0.1:8000/api/units/1/trace -H "Authorization: Bearer $TOKEN
 | 观测档案 | 类型/站点/编号检索，原始载荷、哈希、修订历史、载荷修订 |
 | 判读冲突 | 未决冲突的来源、置信度、处置记录 |
 | 样区规则册与模型 | 规则册四类门槛、路线段、海拔带；模型校准集、权重、阈值复核 |
+| 湿地修复调查比较 | 处理区/参照区观测比较、候选权重与排除理由、缺失调查日、施工影响剔除、敏感性、工程资料维护、输入批次与报告历史 |
 
 ## 8. 主要 API
 
@@ -233,6 +296,14 @@ curl -s http://127.0.0.1:8000/api/units/1/trace -H "Authorization: Bearer $TOKEN
 | POST | `/api/probability/models/{id}/evaluate` | 概率复算（可选校准集偏移，只读不签署） |
 | GET | `/api/probability/models/{id}/threshold-sensitivity` | 阈值敏感性 |
 | GET | `/api/rulebooks`、`/api/models`、`/api/stations`、`/api/zones`、`/api/audit` | 规则册、模型、站点、样区、审计 |
+| GET | `/api/comparison/plans`、`/api/comparison/plans/{id}` | 比较方案（成员、观察窗口、纳入依据、锁定状态、历史报告） |
+| GET | `/api/comparison/areas`、`/api/comparison/areas/{id}/observation` | 比较区域与逐调查单元观测（含有效努力量、排除原因） |
+| POST | `/api/comparison/plans/{id}/analyse` | 生成比较报告（多参照加权 / 单参照 / 描述性） |
+| POST | `/api/comparison/plans/{id}/recompute` | 按当前输入重算并给出“输入修订 vs 方案变化”说明 |
+| GET | `/api/comparison/plans/{id}/analyses`、`/api/comparison/analyses/{id}` | 报告历史与冻结报告详情 |
+| GET/POST | `/api/comparison/projects`、`/api/comparison/projects/{id}`、`/api/comparison/projects/{id}/revisions` | 工程资料（空间范围、阶段、实际日期、来源）与日期/边界修订 |
+| POST | `/api/comparison/projects/{id}/phases` | 登记施工阶段；可登记为同期独立工程（参照区自身开工） |
+| POST | `/api/comparison/availability-notes` | 补录调查可用性说明（按比例折算有效努力量，不改原始记录） |
 
 ## 9. 目录结构
 
@@ -244,12 +315,14 @@ backend/
     coverage.py        # 覆盖组装器：四类门槛判定与证据留存
     certificates.py    # 有效性裁定：状态、用途、复审版本
     probability.py     # 检测概率模型（含门控特征与敏感区间）
+    restoration.py     # 湿地修复比较：适用性读取、有效努力量校准、修复前权重、敏感性与变更归因
     services.py        # 组装运行、记录/判读修订、引用、冲突处置、重签发
-    seed.py            # 确定性种子数据（7 个验收场景）
-    routers/           # auth / catalog / surveys / records / probability
-  tests/               # 15 个 pytest 用例
+    seed.py            # 确定性种子数据（7 个验收场景）+ 调用 seed_wetland
+    seed_wetland.py    # 湿地修复比较种子（2 个季节、7 个比较区、1 个工程资料与阶段）
+    routers/           # auth / catalog / surveys / records / probability / comparison
+  tests/               # 26 个 pytest 用例
 frontend/
-  src/views/           # 8 个业务页面
+  src/views/           # 9 个业务页面
   src/components/      # 状态徽章、概率区间条、提示
 docker-compose.yml     # db + backend + frontend 一键启动
 ```

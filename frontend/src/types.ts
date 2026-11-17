@@ -361,3 +361,269 @@ export interface ArchiveRecord {
   determinations?: Determination[]
   used_by_units?: number[]
 }
+
+// ------------------------------------------------------- restoration comparison
+export interface ComparisonAreaRef {
+  id: number
+  code: string
+  name: string
+  role: 'treatment' | 'reference'
+  role_label?: string
+  boundary: { type: string; coordinates: number[][][] }
+  centroid: { lat: number; lon: number }
+  elevation_range_m: [number, number]
+  habitat: Record<string, any>
+  description: string
+  stations: Array<{ id: number; code: string; name: string }>
+}
+
+export interface ComparisonUnitRow {
+  unit_id: number
+  station_id: number
+  station_code: string | null
+  date: string
+  certificate_no: string | null
+  certificate_status: string
+  review_status: string | null
+  trend_eligible: boolean
+  gate_status: Record<string, string>
+  exclusion: string | null
+  exclusion_detail: string
+  detections: number
+  observations: number
+  families: Record<string, { detections: number; observations: number; present_species: string[] }>
+  effective_effort: {
+    available_hours: number
+    pending_ratio: number
+    observation_quality: number
+    effective_effort_days: number
+    material_count: number
+    calibration_id: string
+    note: string
+    availability_notes?: Array<Record<string, any>>
+  }
+  availability_notes: Array<Record<string, any>>
+  observation_rate: number
+  material_record_ids: number[]
+  evidence_record_ids: number[]
+  impact_window: Record<string, any> | null
+}
+
+export interface ComparisonAreaObservation {
+  area_id: number
+  code: string
+  name: string
+  role: string
+  station_codes: string[]
+  station_ids: number[]
+  elevation_range_m: [number, number]
+  habitat: Record<string, any>
+  units: ComparisonUnitRow[]
+  counts: { units: number; usable: number; excluded_impact: number; excluded_other: number }
+  expected_dates: string[]
+  missing_dates: string[]
+  missing_detail: Array<{ date: string; reason: string }>
+  construction_windows: Array<Record<string, any>>
+}
+
+export interface ComparisonWeight {
+  area_id: number
+  code: string
+  name: string
+  status: 'included' | 'excluded'
+  weight: number
+  reason: string
+  common_pre_dates: string[]
+  pre_date_coverage: number
+  pre_fit_error: number | null
+  habitat_similarity: number
+  series: { pre: Record<string, number>; candidate: Record<string, number> }
+  post_dates?: string[]
+}
+
+export interface ComparisonCandidate {
+  area_id: number
+  code: string
+  name: string
+  station_codes: string[]
+  habitat_similarity: number
+  pre_dates: string[]
+  post_dates: string[]
+  usable_post_dates: string[]
+  missing_dates: string[]
+  impacted_units: Array<Record<string, any>>
+  construction_dates: Array<Record<string, any>>
+  impact_note?: string
+  construction_note?: string
+  heavy_impact?: string
+}
+
+export interface ComparisonContribution {
+  area_id?: number
+  code: string
+  weight: number
+  rate: number | null
+  included: boolean
+  contribution?: number
+  reason?: string
+}
+
+export interface ComparisonResultRow {
+  date: string
+  phase: string
+  sufficient: boolean
+  retained_weight: number
+  note: string
+  treatment_rate: number | null
+  reference_rate: number | null
+  difference: number | null
+  relative_change_pct: number | null
+  contributions: ComparisonContribution[]
+  treatment_unit_id: number | null
+}
+
+export interface ComparisonConclusion {
+  key: string
+  verdict: string
+  basis: string
+  not_applicable: string
+}
+
+export interface ComparisonAnalysis {
+  id: number
+  analysis_code: string
+  plan_id: number
+  plan_code: string | null
+  plan_version: number
+  status: string
+  method: string
+  method_label: string
+  input_batch: Record<string, any>
+  input_snapshot: Record<string, any>
+  weights: ComparisonWeight[]
+  exclusions: Array<{ area_id: number; code: string; name: string; reason: string; impacted_unit_ids: number[] }>
+  results: ComparisonResultRow[]
+  summary: Record<string, any>
+  change_log: Array<{ source: string; summary: string; detail?: Record<string, any> }>
+  previous_analysis_id: number | null
+  created_by: string
+  created_at: string
+  note: string
+  frozen: boolean
+  areas: ComparisonAreaObservation[]
+  candidates: ComparisonCandidate[]
+  diagnostics: Record<string, any>
+  conclusions: ComparisonConclusion[]
+  pre: {
+    construction_start: string | null
+    construction_end: string | null
+    common_pre_dates: string[]
+    treatment_pre_dates: string[]
+    construction_period_dates?: string[]
+    construction_period_note?: string
+    post_dates: string[]
+    pre_results: Array<Record<string, any>>
+    mean_pre_difference: number | null
+  }
+  post: Record<string, any> | null
+  descriptive: Array<{
+    area_id: number
+    code: string
+    name: string
+    role: string
+    usable_dates: string[]
+    unit_count: number
+    mean_rate: number | null
+    detections: number
+    calibrated_effort_days: number
+    excluded_dates: Array<Record<string, any>>
+  }>
+  sensitivity: {
+    leave_one_out?: Array<{
+      area_id: number
+      code: string
+      weight: number
+      redistributed_weight: number
+      per_date: Array<{ date: string; reference_rate: number | null; delta_pct: number | null }>
+      max_delta_pct: number
+      stable: boolean
+    }>
+    held_out_pre_dates?: Array<Record<string, any>>
+    pre_fit_errors?: Array<Record<string, any>>
+  }
+  reasons: string[]
+  diff?: Record<string, any>
+}
+
+export interface ComparisonPlan {
+  id: number
+  plan_code: string
+  name: string
+  version: number
+  status: string
+  season_scope: string[]
+  observation_start: string
+  observation_end: string
+  species_codes: string[]
+  criteria: Record<string, any>
+  treatment_project_id: number | null
+  treatment_project: {
+    id: number
+    code: string
+    name: string
+    actual_start: string | null
+    actual_end: string | null
+    revision: number
+  } | null
+  created_by: string
+  locked_by: string
+  locked_at: string | null
+  note: string
+  members: Array<{ id: number; area_id: number; area_code: string; area_name: string; role: string; note: string }>
+  latest_analysis: { id: number; analysis_code: string; status: string; method: string; created_at: string } | null
+  missing_reason?: string | null
+  analyses?: Array<Record<string, any>>
+}
+
+export interface EngineeringProject {
+  id: number
+  code: string
+  name: string
+  project_type: string
+  status: string
+  spatial_boundary: Record<string, any>
+  impact_boundary: Record<string, any>
+  actual_start: string | null
+  actual_end: string | null
+  source_type: string
+  source_ref: string
+  description: string
+  revision: number
+  created_by: string
+  created_at: string | null
+  phases: Array<{
+    id: number
+    phase_code: string
+    name: string
+    stage_type: string
+    planned_start: string | null
+    planned_end: string | null
+    actual_start: string | null
+    actual_end: string | null
+    boundary: Record<string, any> | null
+    source_type: string
+    source_ref: string
+    revision: number
+    note: string
+  }>
+  revisions: Array<{
+    id: number
+    phase_id: number | null
+    field: string
+    previous: Record<string, any>
+    updated: Record<string, any>
+    reason: string
+    actor: string
+    created_at: string
+  }>
+}

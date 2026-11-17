@@ -368,3 +368,193 @@ class AuditEvent(Base):
     actor: Mapped[str] = mapped_column(String(64))
     detail: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+# ---------------------------------------------------------------------------
+# Wetland restoration comparison workspace.
+#
+# The workspace never approves engineering work and never scores a project. It
+# keeps engineering records (spatial range, phase, actual construction dates and
+# source), reads survey applicability from the main service (station version,
+# certificate, determinations), and stores comparison plans and analyses with the
+# exact input batch they used.
+# ---------------------------------------------------------------------------
+class ComparisonArea(Base):
+    __tablename__ = "comparison_areas"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(32), unique=True)
+    name: Mapped[str] = mapped_column(String(128))
+    zone_id: Mapped[int | None] = mapped_column(ForeignKey("zones.id"), nullable=True)
+    role: Mapped[str] = mapped_column(String(32), default="reference")  # treatment | reference
+    boundary: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    centroid_lat: Mapped[float] = mapped_column(Float)
+    centroid_lon: Mapped[float] = mapped_column(Float)
+    elevation_min_m: Mapped[float] = mapped_column(Float)
+    elevation_max_m: Mapped[float] = mapped_column(Float)
+    habitat: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    description: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(32), default="active")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    stations: Mapped[list["ComparisonAreaStation"]] = relationship(
+        back_populates="area", order_by="ComparisonAreaStation.id"
+    )
+
+
+class ComparisonAreaStation(Base):
+    __tablename__ = "comparison_area_stations"
+    __table_args__ = (UniqueConstraint("area_id", "station_id", name="uq_area_station"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    area_id: Mapped[int] = mapped_column(ForeignKey("comparison_areas.id"), index=True)
+    station_id: Mapped[int] = mapped_column(ForeignKey("stations.id"))
+
+    area: Mapped[ComparisonArea] = relationship(back_populates="stations")
+
+
+class EngineeringProject(Base):
+    __tablename__ = "engineering_projects"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(64), unique=True)
+    name: Mapped[str] = mapped_column(String(160))
+    project_type: Mapped[str] = mapped_column(String(64), default="wetland_restoration")
+    status: Mapped[str] = mapped_column(String(32), default="completed")
+    spatial_boundary: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    impact_boundary: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    actual_start: Mapped[date] = mapped_column(Date)
+    actual_end: Mapped[date | None] = mapped_column(Date, nullable=True)
+    source_type: Mapped[str] = mapped_column(String(64), default="工程台账")
+    source_ref: Mapped[str] = mapped_column(String(128), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    created_by: Mapped[str] = mapped_column(String(64), default="seed")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    phases: Mapped[list["EngineeringPhase"]] = relationship(
+        back_populates="project", order_by="EngineeringPhase.id"
+    )
+
+
+class EngineeringPhase(Base):
+    __tablename__ = "engineering_phases"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("engineering_projects.id"), index=True)
+    phase_code: Mapped[str] = mapped_column(String(64))
+    name: Mapped[str] = mapped_column(String(128))
+    stage_type: Mapped[str] = mapped_column(String(32), default="construction")
+    planned_start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    planned_end: Mapped[date | None] = mapped_column(Date, nullable=True)
+    actual_start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    actual_end: Mapped[date | None] = mapped_column(Date, nullable=True)
+    boundary: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    source_type: Mapped[str] = mapped_column(String(64), default="施工月报")
+    source_ref: Mapped[str] = mapped_column(String(128), default="")
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    note: Mapped[str] = mapped_column(Text, default="")
+
+    project: Mapped[EngineeringProject] = relationship(back_populates="phases")
+
+
+class EngineeringRevision(Base):
+    """Append-only record of corrections to engineering records (dates, boundaries, sources)."""
+
+    __tablename__ = "engineering_revisions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("engineering_projects.id"), index=True)
+    phase_id: Mapped[int | None] = mapped_column(ForeignKey("engineering_phases.id"), nullable=True)
+    field: Mapped[str] = mapped_column(String(64))
+    previous: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    updated: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    reason: Mapped[str] = mapped_column(Text, default="")
+    actor: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ComparisonPlan(Base):
+    __tablename__ = "comparison_plans"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    plan_code: Mapped[str] = mapped_column(String(64), unique=True)
+    name: Mapped[str] = mapped_column(String(160))
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String(32), default="draft")  # draft | locked
+    season_scope: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    observation_start: Mapped[date] = mapped_column(Date)
+    observation_end: Mapped[date] = mapped_column(Date)
+    species_codes: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    criteria: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    treatment_project_id: Mapped[int | None] = mapped_column(
+        ForeignKey("engineering_projects.id"), nullable=True
+    )
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    locked_by: Mapped[str] = mapped_column(String(64), default="")
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    note: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    members: Mapped[list["ComparisonPlanMember"]] = relationship(
+        back_populates="plan", order_by="ComparisonPlanMember.id"
+    )
+
+
+class ComparisonPlanMember(Base):
+    __tablename__ = "comparison_plan_members"
+    __table_args__ = (UniqueConstraint("plan_id", "area_id", name="uq_plan_member"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    plan_id: Mapped[int] = mapped_column(ForeignKey("comparison_plans.id"), index=True)
+    area_id: Mapped[int] = mapped_column(ForeignKey("comparison_areas.id"))
+    role: Mapped[str] = mapped_column(String(32), default="reference")  # treatment | reference
+    note: Mapped[str] = mapped_column(Text, default="")
+
+    plan: Mapped[ComparisonPlan] = relationship(back_populates="members")
+
+
+class ComparisonAnalysis(Base):
+    """A frozen comparison report; later recomputes append a new row and never rewrite it."""
+
+    __tablename__ = "comparison_analyses"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    analysis_code: Mapped[str] = mapped_column(String(64), unique=True)
+    plan_id: Mapped[int] = mapped_column(ForeignKey("comparison_plans.id"), index=True)
+    plan_version: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(32))  # computed | descriptive_only | under_review
+    method: Mapped[str] = mapped_column(String(64))
+    summary: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    input_batch: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    input_snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    weights: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
+    exclusions: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
+    results: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
+    change_log: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
+    previous_analysis_id: Mapped[int | None] = mapped_column(
+        ForeignKey("comparison_analyses.id"), nullable=True
+    )
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    note: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class SurveyAvailabilityNote(Base):
+    """Researcher-recorded effort constraint for an area date (e.g. survey duration halved).
+
+    The note never changes certificates or determinations; it only caps the
+    effective effort used by the comparison workspace and is surfaced as a data caveat.
+    """
+
+    __tablename__ = "survey_availability_notes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    area_id: Mapped[int] = mapped_column(ForeignKey("comparison_areas.id"), index=True)
+    station_id: Mapped[int | None] = mapped_column(ForeignKey("stations.id"), nullable=True)
+    survey_date: Mapped[date] = mapped_column(Date)
+    kind: Mapped[str] = mapped_column(String(64), default="effort_constraint")
+    effort_scale: Mapped[float] = mapped_column(Float, default=1.0)
+    reason: Mapped[str] = mapped_column(Text, default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

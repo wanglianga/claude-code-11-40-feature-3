@@ -54,6 +54,11 @@ function onLogout() {
           <span class="nav-dot"></span>单元回溯链
         </router-link>
 
+        <div class="nav-label">修复比较</div>
+        <router-link to="/restoration" :class="{ active: route.name === 'restoration' }">
+          <span class="nav-dot"></span>湿地修复调查比较
+        </router-link>
+
         <div class="nav-label">证据与规则</div>
         <router-link to="/records" :class="{ active: route.name === 'records' }">
           <span class="nav-dot"></span>观测档案

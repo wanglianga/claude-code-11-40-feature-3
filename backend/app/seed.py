@@ -373,7 +373,7 @@ def _record(
     precision=None,
     actor="seed",
 ):
-    ingest_record(
+    return ingest_record(
         db,
         {
             "record_type": record_type,
@@ -748,8 +748,15 @@ def main() -> None:
         seed_archive(db, zone_map, station_map)
         run = seed_run(db, rulebook, model)
         seed_references_and_revision(db, run)
+        from .seed_wetland import seed_wetland
+
+        wetland = seed_wetland(db)
         db.commit()
-        print(f"seed: run {run.run_code} with {len(run.units)} survey units")
+        print(
+            f"seed: run {run.run_code} with {len(run.units)} survey units; "
+            f"wetland comparison plan {wetland['plan'].plan_code} with "
+            f"{len(wetland['areas'])} areas"
+        )
     except Exception:
         db.rollback()
         raise

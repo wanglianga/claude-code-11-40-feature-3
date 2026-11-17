@@ -12,6 +12,7 @@ const router = createRouter({
     { path: '/rulebooks', name: 'rulebooks', component: () => import('./views/RulebooksView.vue') },
     { path: '/conflicts', name: 'conflicts', component: () => import('./views/ConflictsView.vue') },
     { path: '/trends', name: 'trends', component: () => import('./views/TrendsView.vue') },
+    { path: '/restoration', name: 'restoration', component: () => import('./views/RestorationView.vue') },
     { path: '/trace', name: 'trace', component: () => import('./views/TraceView.vue') },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
